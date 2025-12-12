@@ -4,6 +4,8 @@ const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
 const cors = require("cors");
+const jwt = require('jsonwebtoken');
+const User = require('./model/UserModel');
 
 const { HoldingsModel } = require("./model/HoldingsModel");
 
@@ -13,9 +15,15 @@ const { OrdersModel } = require("./model/OrdersModel");
 const PORT = process.env.PORT || 3002;
 const uri = process.env.MONGO_URL;
 
+const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+
 const app = express();
 
-app.use(cors());
+// CORS configuration
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    credentials: true
+}));
 app.use(bodyParser.json());
 
 app.get("/addHoldings", async (req, res) => {
@@ -210,9 +218,118 @@ app.post("/newOrder", async (req, res) => {
   res.send("Order saved!");
 });
 
+app.post('/signup', async (req, res) => {
+    try {
+        // Check MongoDB connection
+        if (mongoose.connection.readyState !== 1) {
+            console.error('MongoDB not connected. ReadyState:', mongoose.connection.readyState);
+            return res.status(503).json({ error: 'Database connection not available. Please try again later.' });
+        }
+
+        const { email, password } = req.body;
+        
+        // Validate input
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required.' });
+        }
+        
+        // Check if email is valid format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: 'Please enter a valid email address.' });
+        }
+        
+        // Check password length
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+        }
+        
+        // Check if user already exists
+        const existing = await User.findOne({ email: email.toLowerCase().trim() });
+        if (existing) {
+            return res.status(409).json({ error: 'Email already registered.' });
+        }
+        
+        // Create new user
+        const user = new User({ 
+            email: email.toLowerCase().trim(), 
+            password 
+        });
+        
+        await user.save();
+        
+        // Generate JWT token
+        const token = jwt.sign({ 
+            id: user._id, 
+            email: user.email 
+        }, JWT_SECRET, { expiresIn: '1d' });
+        
+        console.log('User created successfully:', user.email);
+        res.json({ 
+            token, 
+            message: 'Signup successful',
+            user: { email: user.email }
+        });
+    } catch (err) {
+        console.error('Signup error:', err);
+        console.error('Error name:', err.name);
+        console.error('Error code:', err.code);
+        console.error('Error message:', err.message);
+        
+        // Handle duplicate key error (MongoDB)
+        if (err.code === 11000) {
+            return res.status(409).json({ error: 'Email already registered.' });
+        }
+        
+        // Handle validation errors
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({ error: err.message });
+        }
+        
+        // Handle bcrypt errors
+        if (err.message && err.message.includes('bcrypt')) {
+            console.error('Bcrypt error - dependencies may not be installed');
+            return res.status(500).json({ error: 'Server configuration error. Please contact support.' });
+        }
+        
+        // Generic error
+        res.status(500).json({ 
+            error: 'Signup failed. Please try again.',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+});
+
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid email or password.' });
+        }
+        const isMatch = await user.comparePassword(password);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Invalid email or password.' });
+        }
+        const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
+        res.json({ token, message: 'Login successful' });
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ error: 'Login failed. Please try again.' });
+    }
+});
+
 app.listen(PORT, () => {
-  console.log("App started!");
-  mongoose.connect(uri);
-  console.log("DB started!");
+  console.log(`Backend server started on port ${PORT}!`);
+  mongoose.connect(uri)
+    .then(() => {
+      console.log("MongoDB connected successfully!");
+    })
+    .catch((err) => {
+      console.error("MongoDB connection error:", err);
+    });
 });
 

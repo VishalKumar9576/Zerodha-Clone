@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 
-function Signup() {
+function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -11,60 +11,31 @@ function Signup() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        
-        // Basic validation
-        if (!email || !password) {
-            setError('Please fill in all fields.');
-            return;
-        }
-        
-        if (password.length < 6) {
-            setError('Password must be at least 6 characters long.');
-            return;
-        }
-        
         setLoading(true);
 
         try {
-            console.log('Attempting signup with:', { email });
-            const response = await axios.post('/signup', {
-                email: email.trim(),
+            const response = await axios.post('/login', {
+                email,
                 password
             });
 
-            console.log('Signup response:', response.data);
-
-            if (response.data && response.data.token) {
+            if (response.data.token) {
                 // Store token in localStorage
                 localStorage.setItem('token', response.data.token);
-                localStorage.setItem('email', email.trim());
-                
-                // Show success message briefly before redirect
-                alert('Account created successfully! Redirecting to dashboard...');
+                localStorage.setItem('email', email);
                 
                 // Redirect to dashboard (assuming dashboard runs on port 3001)
                 window.location.href = 'http://localhost:3001';
-            } else {
-                setError('Signup successful but no token received. Please try logging in.');
             }
         } catch (err) {
-            console.error('Signup error details:', err);
-            console.error('Error response:', err.response);
-            
-            if (err.response) {
-                // Server responded with error
-                if (err.response.data && err.response.data.error) {
-                    setError(err.response.data.error);
-                } else {
-                    setError(`Server error: ${err.response.status} - ${err.response.statusText}`);
-                }
-            } else if (err.request) {
-                // Request was made but no response received
-                setError('Cannot connect to server. Please make sure the backend is running on port 3002.');
+            if (err.response && err.response.data && err.response.data.error) {
+                setError(err.response.data.error);
+            } else if (err.message === 'Network Error' || err.code === 'ECONNREFUSED') {
+                setError('Cannot connect to server. Please make sure the backend is running.');
             } else {
-                // Something else happened
-                setError('Signup failed: ' + (err.message || 'Unknown error'));
+                setError('Login failed. Please check your credentials and try again.');
             }
+            console.error('Login error:', err);
         } finally {
             setLoading(false);
         }
@@ -74,8 +45,7 @@ function Signup() {
         <div className="container" style={{ maxWidth: '500px', marginTop: '50px', marginBottom: '50px' }}>
             <div className="card shadow">
                 <div className="card-body p-5">
-                    <h2 className="card-title text-center mb-2">Create New Account</h2>
-                    <p className="text-center text-muted mb-4">Sign up to get started with your Zerodha account</p>
+                    <h2 className="card-title text-center mb-4">Login</h2>
                     
                     {error && (
                         <div className="alert alert-danger" role="alert">
@@ -107,7 +77,6 @@ function Signup() {
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
                                 placeholder="Enter your password"
-                                minLength="6"
                             />
                         </div>
 
@@ -116,13 +85,13 @@ function Signup() {
                             className="btn btn-primary w-100"
                             disabled={loading}
                         >
-                            {loading ? 'Creating Account...' : 'Sign Up'}
+                            {loading ? 'Logging in...' : 'Login'}
                         </button>
                     </form>
 
                     <div className="text-center mt-3">
                         <p className="mb-0">
-                            Already have an account? <Link to="/login">Login</Link>
+                            Don't have an account? <Link to="/signup">Sign Up</Link>
                         </p>
                     </div>
                 </div>
@@ -131,4 +100,5 @@ function Signup() {
     );
 }
 
-export default Signup;
+export default Login;
+
